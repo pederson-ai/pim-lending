@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+table {
+  @apply w-full;
+}
