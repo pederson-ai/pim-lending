@@ -53,7 +53,7 @@ export function calculateTotalAmountDue({
     cursor = new Date(Date.UTC(paidDate.getUTCFullYear(), paidDate.getUTCMonth(), 1));
   }
 
-  while (cursor.getTime() <= asOfDate.getTime()) {
+  while (cursor.getTime() < asOfDate.getTime()) {
     total += monthlyPayment || monthlyInterest;
     cursor = addMonthsUtc(cursor, 1);
   }
