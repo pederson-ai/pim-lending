@@ -37,6 +37,10 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
                   lienPosition: loan.lienPosition,
                   paidToDate: loan.paidToDate,
                   dueDate: loan.dueDate,
+                  principalBalance: loan.principalBalance,
+                  interestRate: loan.interestRate,
+                  monthlyPayment: loan.monthlyPayment,
+                  maturityDate: loan.maturityDate,
                 }}
               />
               <div className="grid gap-4 text-sm md:grid-cols-2">

@@ -34,6 +34,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       lienPosition: body.lienPosition?.trim() || null,
       paidToDate: body.paidToDate ? new Date(body.paidToDate) : undefined,
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      principalBalance: body.principalBalance != null ? Number(body.principalBalance) : undefined,
+      interestRate: body.interestRate != null ? Number(body.interestRate) : undefined,
+      monthlyPayment: body.monthlyPayment != null ? Number(body.monthlyPayment) : undefined,
+      maturityDate: body.maturityDate ? new Date(body.maturityDate) : undefined,
     },
   });
 
