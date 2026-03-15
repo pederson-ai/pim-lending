@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { formatDateInput } from '@/lib/utils';
+
+const lienOptions = ['', '1st', '2nd', '3rd'];
+const statusOptions = ['CURRENT', 'PAST_DUE', 'PAID_OFF', 'MATURED'];
 
 export function LoanEditForm({
   loan,
@@ -14,6 +18,9 @@ export function LoanEditForm({
     borrowerAddress: string;
     status: string;
     reserveBalance: number;
+    lienPosition: string | null;
+    paidToDate: Date | string;
+    dueDate: Date | string | null;
   };
 }) {
   const router = useRouter();
@@ -25,6 +32,9 @@ export function LoanEditForm({
     borrowerAddress: loan.borrowerAddress,
     status: loan.status,
     reserveBalance: String(loan.reserveBalance ?? 0),
+    lienPosition: loan.lienPosition ?? '',
+    paidToDate: formatDateInput(loan.paidToDate),
+    dueDate: formatDateInput(loan.dueDate),
   });
 
   async function onSubmit(e: React.FormEvent) {
@@ -41,7 +51,6 @@ export function LoanEditForm({
     });
 
     setSaving(false);
-
     if (!response.ok) return;
 
     setOpen(false);
@@ -60,9 +69,14 @@ export function LoanEditForm({
       <textarea className="min-h-24 rounded-md border border-slate-300 px-3 py-2" placeholder="Borrower address" value={form.borrowerAddress} onChange={(e) => setForm({ ...form, borrowerAddress: e.target.value })} required />
       <div className="grid gap-3 md:grid-cols-2">
         <select className="rounded-md border border-slate-300 px-3 py-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-          {['ACTIVE', 'PAID_OFF', 'DEFAULT', 'MATURED'].map((status) => <option key={status} value={status}>{status}</option>)}
+          {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
         </select>
         <input className="rounded-md border border-slate-300 px-3 py-2" type="number" step="0.01" placeholder="Reserve balance" value={form.reserveBalance} onChange={(e) => setForm({ ...form, reserveBalance: e.target.value })} required />
+        <select className="rounded-md border border-slate-300 px-3 py-2" value={form.lienPosition} onChange={(e) => setForm({ ...form, lienPosition: e.target.value })}>
+          {lienOptions.map((option) => <option key={option || 'blank'} value={option}>{option || 'None'}</option>)}
+        </select>
+        <input className="rounded-md border border-slate-300 px-3 py-2" type="date" value={form.paidToDate} onChange={(e) => setForm({ ...form, paidToDate: e.target.value })} required />
+        <input className="rounded-md border border-slate-300 px-3 py-2" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
       </div>
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</Button>

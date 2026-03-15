@@ -23,7 +23,10 @@ model Loan {
   monthlyPayment   Float
   reserveBalance   Float       @default(0)
   lienPosition     String?
-  status           String      @default("ACTIVE")
+  status           String      @default("CURRENT")
+  paidToDate       DateTime
+  dueDate          DateTime?
+  totalAmountDue   Float       @default(0)
   payments         Payment[]
   statements       Statement[]
   createdAt        DateTime    @default(now())
@@ -31,7 +34,7 @@ model Loan {
 }
 
 model Payment {
-  id          Int      @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   loanId       Int
   loan         Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
   paymentDate  DateTime
@@ -47,7 +50,7 @@ model Statement {
   loanId         Int
   loan           Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
   statementDate  DateTime
-  dueDate        DateTime
+  dueDate        DateTime?
   amountDue      Float
   pdfPath        String?
   sentAt         DateTime?

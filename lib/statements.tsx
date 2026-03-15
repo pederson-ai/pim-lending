@@ -3,7 +3,8 @@ import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { Document, Image, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import { format } from 'date-fns';
-import { recalculatePaymentBalances } from '@/lib/payments';
+import { calculateTotalAmountDue, recalculateLoanAmounts, recalculatePaymentBalances } from '@/lib/payments';
+import { addMonthsUtc, formatCurrency, formatPercent } from '@/lib/utils';
 
 const LENDER_ADDRESS = ['PIM Income Fund LLC', '1750 SW Skyline Blvd, Ste 25', 'Portland, OR 97221'];
 const LOGO_PATH = path.join(process.cwd(), 'public', 'pim-logo.png');
@@ -22,19 +23,10 @@ const styles = StyleSheet.create({
   stat: { width: '48%' },
   tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#cbd5e1', paddingBottom: 6, marginBottom: 6, fontWeight: 700 },
   tableRow: { flexDirection: 'row', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  colDate: { width: '18%' },
-  colDesc: { width: '46%', paddingRight: 8 },
-  colAmount: { width: '18%', textAlign: 'right' },
-  colBalance: { width: '18%', textAlign: 'right' },
+  colDate: { width: '22%' },
+  colDesc: { width: '50%', paddingRight: 8 },
+  colAmount: { width: '28%', textAlign: 'right' },
 });
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value ?? 0);
-}
-
-function formatPercent(value: number) {
-  return `${(value * 100).toFixed(2)}%`;
-}
 
 function StatementDocument({ loan, statement }: any) {
   return (
@@ -68,8 +60,9 @@ function StatementDocument({ loan, statement }: any) {
                 ['Reserve Balance', formatCurrency(loan.reserveBalance)],
                 ['Maturity Date', format(loan.maturityDate, 'M/d/yyyy')],
                 ['Payment Amount', formatCurrency(loan.monthlyPayment)],
-                ['Amount Due', formatCurrency(statement.amountDue)],
-                ['Due Date', format(statement.dueDate, 'M/d/yyyy')],
+                ['Total Amount Due', formatCurrency(statement.amountDue)],
+                ['Due Date', statement.dueDate ? format(statement.dueDate, 'M/d/yyyy') : 'N/A'],
+                ['Paid To Date', format(loan.paidToDate, 'M/d/yyyy')],
               ].map(([label, value]) => (
                 <View key={label} style={styles.stat}>
                   <Text style={styles.label}>{label}</Text>
@@ -84,15 +77,13 @@ function StatementDocument({ loan, statement }: any) {
         <View style={styles.tableHeader}>
           <Text style={styles.colDate}>Date</Text>
           <Text style={styles.colDesc}>Description</Text>
-          <Text style={styles.colAmount}>Amount/Interest</Text>
-          <Text style={styles.colBalance}>Balance</Text>
+          <Text style={styles.colAmount}>Amount</Text>
         </View>
         {loan.payments.map((payment: any) => (
           <View style={styles.tableRow} key={payment.id}>
             <Text style={styles.colDate}>{format(payment.paymentDate, 'M/d/yyyy')}</Text>
             <Text style={styles.colDesc}>{payment.description}</Text>
             <Text style={styles.colAmount}>{formatCurrency(payment.amount)}</Text>
-            <Text style={styles.colBalance}>{formatCurrency(payment.balance)}</Text>
           </View>
         ))}
       </Page>
@@ -102,6 +93,7 @@ function StatementDocument({ loan, statement }: any) {
 
 async function getLoanWithCalculatedPayments(loanId: number) {
   await recalculatePaymentBalances(loanId);
+  await recalculateLoanAmounts(loanId);
 
   const loan = await prisma.loan.findUnique({
     where: { id: loanId },
@@ -188,14 +180,26 @@ export async function generateStatementPdf({ loanId, month, year }: { loanId: nu
   const loan = await getLoanWithCalculatedPayments(loanId);
 
   const statementDate = month && year ? new Date(Date.UTC(year, month - 1, 15)) : new Date();
-  const dueDate = month && year ? new Date(Date.UTC(year, month - 1, 1)) : loan.statements[0]?.dueDate ?? new Date();
-  const amountDue = loan.monthlyPayment;
+  const amountDue = calculateTotalAmountDue({
+    principalBalance: loan.principalBalance,
+    interestRate: loan.interestRate,
+    monthlyPayment: loan.monthlyPayment,
+    paidToDate: loan.paidToDate,
+    statementDate,
+    status: loan.status,
+  });
+  const computedDueDate = loan.dueDate ?? addMonthsUtc(loan.paidToDate, 1);
+
+  await prisma.loan.update({
+    where: { id: loan.id },
+    data: { totalAmountDue: amountDue },
+  });
 
   const statement = await prisma.statement.create({
     data: {
       loanId: loan.id,
       statementDate,
-      dueDate,
+      dueDate: computedDueDate,
       amountDue,
     },
   });

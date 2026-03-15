@@ -1,21 +1,21 @@
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
-import { loanStatusMeta } from '@/lib/utils';
+import { CheckCircle2, CircleSlash, XCircle } from 'lucide-react';
+import { deriveLoanStatus } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
-export function StatusBadge({ maturityDate, dueDate }: { maturityDate: Date | string; dueDate?: Date | string | null }) {
-  const status = loanStatusMeta(maturityDate, dueDate);
+export function StatusBadge({ status, dueDate }: { status: string; dueDate?: Date | string | null }) {
+  const resolved = deriveLoanStatus({ status, dueDate });
 
   const style = {
     green: 'bg-emerald-100 text-emerald-700',
     red: 'bg-red-100 text-red-700',
-    yellow: 'bg-amber-100 text-amber-700',
-  }[status.tone];
+    slate: 'bg-slate-200 text-slate-700',
+  }[resolved.tone];
 
   const icon = {
     green: <CheckCircle2 className="mr-1 h-3.5 w-3.5" />,
     red: <XCircle className="mr-1 h-3.5 w-3.5" />,
-    yellow: <AlertTriangle className="mr-1 h-3.5 w-3.5" />,
-  }[status.tone];
+    slate: <CircleSlash className="mr-1 h-3.5 w-3.5" />,
+  }[resolved.tone];
 
-  return <Badge className={style}>{icon}{status.label}</Badge>;
+  return <Badge className={style}>{icon}{resolved.label}</Badge>;
 }

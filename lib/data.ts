@@ -1,7 +1,14 @@
 import { prisma } from '@/lib/prisma';
-import { recalculatePaymentBalances } from '@/lib/payments';
+import { recalculateLoanAmounts, recalculatePaymentBalances } from '@/lib/payments';
+
+async function refreshLoans() {
+  const ids = await prisma.loan.findMany({ select: { id: true } });
+  await Promise.all(ids.map(({ id }) => recalculateLoanAmounts(id)));
+}
 
 export async function getDashboardData() {
+  await refreshLoans();
+
   const loans = await prisma.loan.findMany({
     include: {
       payments: { orderBy: { paymentDate: 'desc' } },
@@ -10,7 +17,7 @@ export async function getDashboardData() {
     orderBy: { borrowerName: 'asc' },
   });
 
-  const totalActiveLoans = loans.filter((loan) => loan.status === 'ACTIVE').length;
+  const totalActiveLoans = loans.filter((loan) => loan.status !== 'PAID_OFF').length;
   const totalPrincipalOutstanding = loans.reduce((sum, loan) => sum + loan.principalBalance, 0);
   const totalInterestCollected = loans.reduce(
     (sum, loan) => sum + loan.payments.reduce((inner, payment) => inner + payment.amount, 0),
@@ -22,6 +29,7 @@ export async function getDashboardData() {
 
 export async function getLoanDetail(id: number) {
   await recalculatePaymentBalances(id);
+  await recalculateLoanAmounts(id);
 
   return prisma.loan.findUnique({
     where: { id },

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { recalculatePaymentBalances } from '@/lib/payments';
+import { recalculateLoanAmounts, recalculatePaymentBalances } from '@/lib/payments';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const loanId = Number(params.id);
   await recalculatePaymentBalances(loanId);
+  await recalculateLoanAmounts(loanId);
 
   const loan = await prisma.loan.findUnique({
     where: { id: loanId },
@@ -30,8 +31,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       borrowerAddress: body.borrowerAddress?.trim(),
       status: body.status?.trim(),
       reserveBalance: Number(body.reserveBalance ?? 0),
+      lienPosition: body.lienPosition?.trim() || null,
+      paidToDate: body.paidToDate ? new Date(body.paidToDate) : undefined,
+      dueDate: body.dueDate ? new Date(body.dueDate) : null,
     },
   });
+
+  await recalculateLoanAmounts(loanId);
 
   return NextResponse.json(updated);
 }

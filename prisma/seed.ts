@@ -2,11 +2,22 @@ import { PrismaClient } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
 import * as xlsx from 'xlsx';
+import { calculateTotalAmountDue } from '../lib/payments';
 
 const prisma = new PrismaClient();
 const BORROWER_ADDRESS = '14660 Falls of Neuse Rd, Ste 149-119\nRaleigh, NC 27614';
 
 const dedupePreference = ['2nd Lien', '1st Lien'];
+
+const loanOverrides: Record<string, { paidToDate: string; dueDate: string | null; status?: string; totalAmountDue?: number; lienPosition?: string | null }> = {
+  '20250327001': { paidToDate: '2026-02-01', dueDate: '2026-03-01' },
+  '20250401001': { paidToDate: '2026-02-01', dueDate: '2026-03-01' },
+  '20250401002': { paidToDate: '2026-02-01', dueDate: '2026-03-01' },
+  '20250401003': { paidToDate: '2026-02-01', dueDate: '2026-03-01' },
+  '20251203001': { paidToDate: '2026-02-01', dueDate: '2026-03-01' },
+  '20260128001': { paidToDate: '2026-01-28', dueDate: '2026-02-01', lienPosition: '1st' },
+  '20251219001': { paidToDate: '2026-01-28', dueDate: null, status: 'PAID_OFF', lienPosition: '2nd', totalAmountDue: 0 },
+};
 
 const parseFloatValue = (value: unknown) => {
   if (value instanceof Date) return Number(value);
@@ -69,13 +80,17 @@ async function main() {
     const propertyCityStateZip = String(sheet['C14']?.v ?? '').trim();
     const maturityDate = parseDateValue(sheet['E13']?.v);
     const monthlyPayment = parseFloatValue(sheet['E14']?.v);
-    const amountDue = parseFloatValue(sheet['E15']?.v);
-    const dueDate = parseDateValue(sheet['E16']?.v);
+    const amountDueFromSheet = parseFloatValue(sheet['E15']?.v);
+    const sheetDueDate = sheet['E16']?.v ? parseDateValue(sheet['E16']?.v) : null;
     const statementDateText = String(sheet['B7']?.v ?? '');
     const statementDateMatch = statementDateText.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-    const statementDate = statementDateMatch ? new Date(statementDateMatch[1]) : dueDate;
+    const statementDate = statementDateMatch ? new Date(statementDateMatch[1]) : sheetDueDate ?? new Date();
     const { city, st, zip } = cityStateZip(propertyCityStateZip);
-    const lienPosition = file.includes('1st Lien') ? '1st Lien' : file.includes('2nd Lien') ? '2nd Lien' : null;
+    const fileLienPosition = file.includes('1st Lien') ? '1st' : file.includes('2nd Lien') ? '2nd' : null;
+    const override = loanOverrides[loanNumber];
+    const paidToDate = override ? new Date(`${override.paidToDate}T00:00:00.000Z`) : sheetDueDate ?? statementDate;
+    const dueDate = override ? (override.dueDate ? new Date(`${override.dueDate}T00:00:00.000Z`) : null) : sheetDueDate;
+    const status = override?.status ?? 'CURRENT';
 
     const payments = [];
     for (let row = 21; row <= 200; row++) {
@@ -96,12 +111,22 @@ async function main() {
         source: /pre-paid/i.test(description)
           ? 'PREPAID'
           : /reserve/i.test(description)
-          ? 'INTEREST_RESERVE'
-          : /closing/i.test(description)
-          ? 'CLOSING_PAYMENT'
-          : 'DIRECT_PAY',
+            ? 'INTEREST_RESERVE'
+            : /closing/i.test(description)
+              ? 'CLOSING_PAYMENT'
+              : 'DIRECT_PAY',
       });
     }
+
+    const computedAmountDue = calculateTotalAmountDue({
+      principalBalance,
+      interestRate,
+      monthlyPayment,
+      paidToDate,
+      statementDate,
+      status,
+    });
+    const totalAmountDue = override?.totalAmountDue ?? computedAmountDue ?? amountDueFromSheet;
 
     await prisma.loan.create({
       data: {
@@ -117,14 +142,17 @@ async function main() {
         maturityDate,
         monthlyPayment,
         reserveBalance,
-        lienPosition,
-        status: 'ACTIVE',
+        lienPosition: override?.lienPosition ?? fileLienPosition,
+        status,
+        paidToDate,
+        dueDate,
+        totalAmountDue,
         payments: { create: payments },
         statements: {
           create: {
             statementDate,
             dueDate,
-            amountDue,
+            amountDue: totalAmountDue,
           },
         },
       },
