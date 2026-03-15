@@ -180,15 +180,17 @@ export async function generateStatementPdf({ loanId, month, year }: { loanId: nu
   const loan = await getLoanWithCalculatedPayments(loanId);
 
   const statementDate = month && year ? new Date(Date.UTC(year, month - 1, 15)) : new Date();
+  const dueDateForCycle = month && year
+    ? new Date(Date.UTC(year, month, 1))
+    : loan.dueDate ?? addMonthsUtc(loan.paidToDate, 1);
   const amountDue = calculateTotalAmountDue({
     principalBalance: loan.principalBalance,
     interestRate: loan.interestRate,
     monthlyPayment: loan.monthlyPayment,
     paidToDate: loan.paidToDate,
-    statementDate,
+    statementDate: dueDateForCycle,
     status: loan.status,
   });
-  const computedDueDate = loan.dueDate ?? addMonthsUtc(loan.paidToDate, 1);
 
   await prisma.loan.update({
     where: { id: loan.id },
@@ -199,7 +201,7 @@ export async function generateStatementPdf({ loanId, month, year }: { loanId: nu
     data: {
       loanId: loan.id,
       statementDate,
-      dueDate: computedDueDate,
+      dueDate: dueDateForCycle,
       amountDue,
     },
   });

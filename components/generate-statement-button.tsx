@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { getStatementPdfUrl } from '@/lib/statement-urls';
 
 export function GenerateStatementButton({ loanId, month, year, label = 'Generate Statement' }: { loanId: number; month?: number; year?: number; label?: string }) {
   const router = useRouter();

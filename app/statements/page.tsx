@@ -9,6 +9,7 @@ import { StatementsToolbar } from '@/components/statements-client';
 import { GenerateStatementButton } from '@/components/generate-statement-button';
 import { SendStatementButton } from '@/components/send-statement-button';
 import { recalculateLoanAmounts } from '@/lib/payments';
+import { getStatementPdfUrl } from '@/lib/statement-urls';
 
 export default async function StatementsPage() {
   const loanIds = await prisma.loan.findMany({ select: { id: true } });
@@ -39,7 +40,7 @@ export default async function StatementsPage() {
                     <td className="py-3 pr-4">{loan.borrowerName}</td>
                     <td className="py-3 pr-4">{loan.loanNumber}</td>
                     <td className="py-3 pr-4">{formatCurrency(loan.totalAmountDue)}</td>
-                    <td className="py-3 pr-4">{latestStatement?.pdfPath ? <Link href={latestStatement.pdfPath} target="_blank" className="text-blue-700">{formatDate(latestStatement.statementDate)}</Link> : 'Not generated'}</td>
+                    <td className="py-3 pr-4">{latestStatement ? <Link href={getStatementPdfUrl(latestStatement.id)} target="_blank" className="text-blue-700">{formatDate(latestStatement.statementDate)}</Link> : 'Not generated'}</td>
                     <td className="py-3 pr-4">{loan.borrowerEmail ?? 'Missing email'}</td>
                     <td className="py-3 pr-4">
                       <div className="flex flex-wrap gap-2">

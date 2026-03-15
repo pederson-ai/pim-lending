@@ -12,6 +12,7 @@ import { LoanEditForm } from '@/components/loan-edit-form';
 import { SendStatementButton } from '@/components/send-statement-button';
 import { StatusBadge } from '@/components/status-badge';
 import { DeletePaymentButton } from '@/components/delete-payment-button';
+import { getStatementPdfUrl } from '@/lib/statement-urls';
 
 export default async function LoanDetailPage({ params }: { params: { id: string } }) {
   const loan = await getLoanDetail(Number(params.id));
@@ -107,7 +108,7 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
                     <div className="font-medium">{formatDate(statement.statementDate)}</div>
                     <div className="text-slate-500">Due {formatDate(statement.dueDate)} · {formatCurrency(statement.amountDue)}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-3">
-                      {statement.pdfPath ? <Link className="text-blue-700" href={statement.pdfPath} target="_blank">Preview PDF</Link> : null}
+                      <Link className="text-blue-700" href={getStatementPdfUrl(statement.id)} target="_blank">Preview PDF</Link>
                       <SendStatementButton statementId={statement.id} />
                       <span className="text-slate-500">{statement.sentAt ? `Sent to ${statement.sentTo}` : 'Not sent'}</span>
                     </div>

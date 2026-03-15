@@ -1,11 +1,16 @@
 import { prisma } from '@/lib/prisma';
-import fs from 'fs/promises';
-import path from 'path';
+import { renderStatementPdfBuffer } from '@/lib/statements';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const statement = await prisma.statement.findUnique({ where: { id: Number(params.id) } });
-  if (!statement?.pdfPath) return new Response('Not found', { status: 404 });
-  const filePath = path.join(process.cwd(), 'public', statement.pdfPath.replace(/^\//, ''));
-  const file = await fs.readFile(filePath);
-  return new Response(file, { headers: { 'Content-Type': 'application/pdf' } });
+  const statementId = Number(params.id);
+  const statement = await prisma.statement.findUnique({ where: { id: statementId } });
+  if (!statement) return new Response('Not found', { status: 404 });
+
+  const file = await renderStatementPdfBuffer(statementId);
+  return new Response(file, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="statement-${statementId}.pdf"`,
+    },
+  });
 }
