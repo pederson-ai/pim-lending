@@ -3,7 +3,10 @@ import { recalculateLoanAmounts, recalculatePaymentBalances } from '@/lib/paymen
 
 async function refreshLoans() {
   const ids = await prisma.loan.findMany({ select: { id: true } });
-  await Promise.all(ids.map(({ id }) => recalculateLoanAmounts(id)));
+
+  for (const { id } of ids) {
+    await recalculateLoanAmounts(id);
+  }
 }
 
 export async function getDashboardData() {

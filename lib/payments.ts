@@ -61,6 +61,49 @@ export function calculateTotalAmountDue({
   return roundCurrency(total);
 }
 
+export function deriveStoredLoanStatus({
+  status,
+  dueDate,
+  asOfDate = new Date(),
+}: {
+  status: string;
+  dueDate?: Date | string | null;
+  asOfDate?: Date;
+}) {
+  if (status === 'MATURED' || status === 'PAID_OFF') return status;
+  if (!dueDate) return 'CURRENT';
+
+  return asOfDate.getTime() > new Date(dueDate).getTime() ? 'PAST_DUE' : 'CURRENT';
+}
+
+async function updateLoanComputedFields(loanId: number, statementDate = new Date()) {
+  const loan = await prisma.loan.findUnique({ where: { id: loanId } });
+  if (!loan) throw new Error('Loan not found');
+
+  const totalAmountDue = calculateTotalAmountDue({
+    principalBalance: loan.principalBalance,
+    interestRate: loan.interestRate,
+    monthlyPayment: loan.monthlyPayment,
+    paidToDate: loan.paidToDate,
+    statementDate,
+    status: loan.status,
+  });
+
+  const dynamicStatus = deriveStoredLoanStatus({
+    status: loan.status,
+    dueDate: loan.dueDate,
+    asOfDate: new Date(),
+  });
+
+  return prisma.loan.update({
+    where: { id: loanId },
+    data: {
+      totalAmountDue,
+      status: dynamicStatus,
+    },
+  });
+}
+
 export async function recalculatePaymentBalances(loanId: number) {
   const loan = await prisma.loan.findUnique({
     where: { id: loanId },
@@ -75,6 +118,8 @@ export async function recalculatePaymentBalances(loanId: number) {
 
   const recalculated = calculateRunningBalances(loan.payments, loan.monthlyPayment);
 
+  if (recalculated.length === 0) return recalculated;
+
   await prisma.$transaction(
     recalculated.map((payment) =>
       prisma.payment.update({
@@ -88,31 +133,45 @@ export async function recalculatePaymentBalances(loanId: number) {
 }
 
 export async function recalculateLoanAmounts(loanId: number, statementDate = new Date()) {
-  const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-  if (!loan) throw new Error('Loan not found');
+  return updateLoanComputedFields(loanId, statementDate);
+}
 
-  const totalAmountDue = calculateTotalAmountDue({
-    principalBalance: loan.principalBalance,
-    interestRate: loan.interestRate,
-    monthlyPayment: loan.monthlyPayment,
-    paidToDate: loan.paidToDate,
-    statementDate,
-    status: loan.status,
-  });
-
-  const dynamicStatus = loan.status === 'MATURED' || loan.status === 'PAID_OFF'
-    ? loan.status
-    : loan.dueDate && new Date().getTime() > new Date(loan.dueDate).getTime()
-      ? 'PAST_DUE'
-      : 'CURRENT';
-
-  return prisma.loan.update({
+export async function recalculateLoanFromPayments(loanId: number, statementDate = new Date()) {
+  const loan = await prisma.loan.findUnique({
     where: { id: loanId },
-    data: {
-      totalAmountDue,
-      status: dynamicStatus,
+    include: {
+      payments: {
+        orderBy: [{ paymentDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      },
     },
   });
+
+  if (!loan) throw new Error('Loan not found');
+
+  let paidToDate = new Date(loan.paidToDate);
+
+  if (loan.payments.length > 0) {
+    paidToDate = new Date(loan.payments[0].paymentDate);
+
+    for (const payment of loan.payments) {
+      if (payment.amount >= loan.monthlyPayment) {
+        paidToDate = addMonthsUtc(paidToDate, 1);
+      }
+    }
+  }
+
+  const dueDate = loan.status === 'PAID_OFF' ? null : addMonthsUtc(paidToDate, 1);
+
+  await prisma.loan.update({
+    where: { id: loanId },
+    data: {
+      paidToDate,
+      dueDate,
+    },
+  });
+
+  await recalculatePaymentBalances(loanId);
+  return updateLoanComputedFields(loanId, statementDate);
 }
 
 export async function recordPaymentAndUpdateLoan({
@@ -155,8 +214,17 @@ export async function recordPaymentAndUpdateLoan({
   });
 
   const balances = await recalculatePaymentBalances(loanId);
-  await recalculateLoanAmounts(loanId, paymentDate);
+  await updateLoanComputedFields(loanId, paymentDate);
   const savedPayment = balances.find((item) => item.id === payment.id);
 
   return { ...payment, balance: savedPayment?.balance ?? payment.balance };
+}
+
+export async function deletePaymentAndUpdateLoan(paymentId: number) {
+  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+  if (!payment) throw new Error('Payment not found');
+
+  await prisma.payment.delete({ where: { id: paymentId } });
+
+  return recalculateLoanFromPayments(payment.loanId, new Date());
 }

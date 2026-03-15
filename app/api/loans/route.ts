@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { recalculateLoanAmounts } from '@/lib/payments';
 
 export async function GET() {
+  const loanIds = await prisma.loan.findMany({ select: { id: true }, orderBy: { borrowerName: 'asc' } });
+
+  for (const { id } of loanIds) {
+    await recalculateLoanAmounts(id);
+  }
+
   const loans = await prisma.loan.findMany({ orderBy: { borrowerName: 'asc' } });
   return NextResponse.json(loans);
 }

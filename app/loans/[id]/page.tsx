@@ -9,6 +9,7 @@ import { GenerateStatementButton } from '@/components/generate-statement-button'
 import { LoanEditForm } from '@/components/loan-edit-form';
 import { SendStatementButton } from '@/components/send-statement-button';
 import { StatusBadge } from '@/components/status-badge';
+import { DeletePaymentButton } from '@/components/delete-payment-button';
 
 export default async function LoanDetailPage({ params }: { params: { id: string } }) {
   const loan = await getLoanDetail(Number(params.id));
@@ -58,9 +59,9 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
             <CardHeader><CardTitle>Payment History</CardTitle></CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="text-sm">
+                <table className="min-w-full text-sm">
                   <thead className="border-b border-slate-200 text-left text-slate-500">
-                    <tr><th className="py-2 pr-4">Date</th><th className="py-2 pr-4">Description</th><th className="py-2 pr-4">Amount</th></tr>
+                    <tr><th className="py-2 pr-4">Date</th><th className="py-2 pr-4">Description</th><th className="py-2 pr-4">Amount</th><th className="py-2 pr-4 text-right">Actions</th></tr>
                   </thead>
                   <tbody>
                     {loan.payments.map((payment) => (
@@ -68,6 +69,11 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
                         <td className="py-3 pr-4">{formatDate(payment.paymentDate)}</td>
                         <td className="py-3 pr-4">{payment.description}</td>
                         <td className="py-3 pr-4">{formatCurrency(payment.amount)}</td>
+                        <td className="py-3 pr-4">
+                          <div className="flex justify-end">
+                            <DeletePaymentButton paymentId={payment.id} />
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
