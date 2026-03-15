@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { recalculatePaymentBalances } from '@/lib/payments';
 
 export async function getDashboardData() {
   const loans = await prisma.loan.findMany({
@@ -20,10 +21,12 @@ export async function getDashboardData() {
 }
 
 export async function getLoanDetail(id: number) {
+  await recalculatePaymentBalances(id);
+
   return prisma.loan.findUnique({
     where: { id },
     include: {
-      payments: { orderBy: { paymentDate: 'desc' } },
+      payments: { orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }] },
       statements: { orderBy: { statementDate: 'desc' } },
     },
   });

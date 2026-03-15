@@ -1,14 +1,17 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
+import { Document, Image, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import { format } from 'date-fns';
+import { recalculatePaymentBalances } from '@/lib/payments';
 
 const LENDER_ADDRESS = ['PIM Income Fund LLC', '1750 SW Skyline Blvd, Ste 25', 'Portland, OR 97221'];
+const LOGO_PATH = path.join(process.cwd(), 'public', 'pim-logo.png');
 
 const styles = StyleSheet.create({
   page: { padding: 32, fontSize: 11, color: '#0f172a' },
   header: { marginBottom: 20 },
+  logo: { width: 170, height: 50, objectFit: 'contain', marginBottom: 12 },
   title: { fontSize: 18, fontWeight: 700, marginBottom: 4 },
   subtitle: { fontSize: 12, marginBottom: 2 },
   sectionRow: { flexDirection: 'row', gap: 20, marginBottom: 18 },
@@ -38,6 +41,7 @@ function StatementDocument({ loan, statement }: any) {
     <Document>
       <Page size="LETTER" style={styles.page}>
         <View style={styles.header}>
+          <Image src={LOGO_PATH} style={styles.logo} />
           <Text style={styles.title}>PIM Income Fund LLC</Text>
           {LENDER_ADDRESS.slice(1).map((line) => <Text key={line} style={styles.subtitle}>{line}</Text>)}
           <Text style={{ marginTop: 12, fontSize: 15, fontWeight: 700 }}>
@@ -96,16 +100,92 @@ function StatementDocument({ loan, statement }: any) {
   );
 }
 
-export async function generateStatementPdf({ loanId, month, year }: { loanId: number; month?: number; year?: number }) {
+async function getLoanWithCalculatedPayments(loanId: number) {
+  await recalculatePaymentBalances(loanId);
+
   const loan = await prisma.loan.findUnique({
     where: { id: loanId },
     include: {
-      payments: { orderBy: { paymentDate: 'desc' } },
+      payments: { orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }] },
       statements: { orderBy: { createdAt: 'desc' } },
     },
   });
 
   if (!loan) throw new Error('Loan not found');
+  return loan;
+}
+
+async function toNodeBuffer(value: Buffer | Uint8Array | ReadableStream | NodeJS.ReadableStream) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+
+  if ('getReader' in value) {
+    const reader = value.getReader();
+    const chunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      if (chunk) chunks.push(chunk);
+    }
+
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+  }
+
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of value) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export async function renderStatementPdfBuffer(statementId: number) {
+  const statement = await prisma.statement.findUnique({
+    where: { id: statementId },
+    include: { loan: true },
+  });
+
+  if (!statement) throw new Error('Statement not found');
+
+  const loan = await getLoanWithCalculatedPayments(statement.loanId);
+  const pdfOutput = await pdf(
+    <StatementDocument
+      loan={loan}
+      statement={{
+        ...statement,
+        amountDue: statement.amountDue,
+        statementDate: statement.statementDate,
+        dueDate: statement.dueDate,
+      }}
+    />,
+  ).toBuffer();
+
+  return toNodeBuffer(pdfOutput as Buffer | Uint8Array | ReadableStream | NodeJS.ReadableStream);
+}
+
+export async function ensureStatementPdf(statementId: number) {
+  const statement = await prisma.statement.findUnique({ where: { id: statementId } });
+  if (!statement) throw new Error('Statement not found');
+
+  const outDir = path.join(process.cwd(), 'public', 'statements');
+  await fs.mkdir(outDir, { recursive: true });
+  const filename = `statement-${statement.id}.pdf`;
+  const pdfPath = path.join(outDir, filename);
+
+  const pdfBuffer = await renderStatementPdfBuffer(statement.id);
+  await fs.writeFile(pdfPath, pdfBuffer);
+
+  return prisma.statement.update({
+    where: { id: statement.id },
+    data: { pdfPath: `/statements/${filename}` },
+    include: { loan: true },
+  });
+}
+
+export async function generateStatementPdf({ loanId, month, year }: { loanId: number; month?: number; year?: number }) {
+  const loan = await getLoanWithCalculatedPayments(loanId);
 
   const statementDate = month && year ? new Date(Date.UTC(year, month - 1, 15)) : new Date();
   const dueDate = month && year ? new Date(Date.UTC(year, month - 1, 1)) : loan.statements[0]?.dueDate ?? new Date();
@@ -120,19 +200,5 @@ export async function generateStatementPdf({ loanId, month, year }: { loanId: nu
     },
   });
 
-  const outDir = path.join(process.cwd(), 'public', 'statements');
-  await fs.mkdir(outDir, { recursive: true });
-  const filename = `statement-${statement.id}.pdf`;
-  const pdfPath = path.join(outDir, filename);
-
-  const blob = await pdf(<StatementDocument loan={loan} statement={{ ...statement, amountDue, statementDate, dueDate }} />).toBuffer();
-  await fs.writeFile(pdfPath, blob);
-
-  const updated = await prisma.statement.update({
-    where: { id: statement.id },
-    data: { pdfPath: `/statements/${filename}` },
-    include: { loan: true },
-  });
-
-  return updated;
+  return ensureStatementPdf(statement.id);
 }
