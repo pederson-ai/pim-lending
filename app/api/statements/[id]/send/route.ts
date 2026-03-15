@@ -14,7 +14,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
 
   if (!statement) return NextResponse.json({ error: 'Statement not found' }, { status: 404 });
   if (!statement.loan.borrowerEmail) {
-    return NextResponse.json({ error: 'Borrower email is missing for this loan' }, { status: 400 });
+    return NextResponse.json({ error: 'Borrower email is missing for this loan. Edit the loan to add email addresses.' }, { status: 400 });
+  }
+
+  const emailAddresses = statement.loan.borrowerEmail.split(',').map((e: string) => e.trim()).filter(Boolean);
+  if (emailAddresses.length === 0) {
+    return NextResponse.json({ error: 'No valid email addresses found for this loan' }, { status: 400 });
   }
 
   await ensureStatementPdf(statement.id);
@@ -23,7 +28,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const filename = `PIM-Mortgage-Statement-${format(statement.statementDate, 'yyyy-MM')}.pdf`;
 
   await sendMailWithAttachment({
-    to: statement.loan.borrowerEmail,
+    to: emailAddresses,
     subject: `PIM Income Fund - Mortgage Statement - ${monthYear}`,
     html: `<p>Dear ${statement.loan.borrowerName},</p><p>Please find your mortgage statement for ${monthYear} attached.</p><p>If you have any questions, please reply to this email.</p><p>Regards,<br />PIM Income Fund LLC</p>`,
     filename,
@@ -34,7 +39,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     where: { id: statement.id },
     data: {
       sentAt: new Date(),
-      sentTo: statement.loan.borrowerEmail,
+      sentTo: emailAddresses.join(', '),
     },
     include: { loan: true },
   });

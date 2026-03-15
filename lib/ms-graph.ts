@@ -44,7 +44,7 @@ export async function sendMailWithAttachment({
   filename,
   contentBytes,
 }: {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   filename: string;
@@ -64,9 +64,9 @@ export async function sendMailWithAttachment({
           contentType: 'HTML',
           content: html,
         },
-        toRecipients: [{
-          emailAddress: { address: to },
-        }],
+        toRecipients: (Array.isArray(to) ? to : to.split(',')).map((addr: string) => ({
+          emailAddress: { address: addr.trim() },
+        })),
         attachments: [{
           '@odata.type': '#microsoft.graph.fileAttachment',
           name: filename,
