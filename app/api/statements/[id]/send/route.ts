@@ -25,11 +25,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   await ensureStatementPdf(statement.id);
   const pdfBuffer = await renderStatementPdfBuffer(statement.id);
   const monthYear = format(statement.statementDate, 'MMMM yyyy');
-  const filename = `PIM-Mortgage-Statement-${format(statement.statementDate, 'yyyy-MM')}.pdf`;
+  const safeBorrowerName = statement.loan.borrowerName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-');
+  const filename = `${safeBorrowerName}-Mortgage-Statement-${format(statement.statementDate, 'yyyy-MM')}.pdf`;
 
   await sendMailWithAttachment({
     to: emailAddresses,
-    subject: `PIM Income Fund - Mortgage Statement - ${monthYear}`,
+    subject: `${statement.loan.borrowerName} - Mortgage Statement - ${monthYear}`,
     html: `<p>Dear ${statement.loan.borrowerName},</p><p>Please find your mortgage statement for ${monthYear} attached.</p><p>If you have any questions, please reply to this email.</p><p>Regards,<br />PIM Income Fund LLC</p>`,
     filename,
     contentBytes: pdfBuffer.toString('base64'),
